@@ -1,0 +1,12 @@
+[package]
+name = "ocaml-lexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+keyword-generator = { path = "./keyword-generator" }
+
+nom = "7.1.0"
+
+[workspace]
+members = ["keyword-generator"]
