@@ -59,7 +59,8 @@ pub struct Label {
     is_optional: bool,
 }
 
-generate_keywords!(Keyword);
+#[generate_keywords]
+pub enum Keyword {}
 
 #[derive(Clone, Debug)]
 pub enum Token {
@@ -77,14 +78,5 @@ impl Token {
             Self::Label(_) => false,
             Self::Keyword(_) => false,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    pub fn test() {
-        let a = Keyword::Amp;
     }
 }

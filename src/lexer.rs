@@ -215,7 +215,7 @@ pub fn parse_literal(input: &str) -> IResult<&str, Literal> {
 
 pub fn parse_token(input: &str) -> IResult<&str, Token> {
     alt((
-        // TODO keyword
+        map(Keyword::parse, Token::Keyword),
         map(parse_identifier, Token::Identifier),
         // TODO label
         map(parse_literal, Token::Literal),
@@ -242,7 +242,19 @@ mod tests {
     }
 
     #[test]
-    pub fn test_integer_literal() {
+    fn test_keyword() {
+        let parse_keyword = Keyword::parse::<&str, ()>;
+
+        assert_parses!(parse_keyword("fun"), Keyword::Fun);
+        assert_parses!(parse_keyword("!="), Keyword::NotEq);
+        assert_parses!(parse_keyword("."), Keyword::Dot);
+        assert_parses!(parse_keyword(".."), Keyword::DotDot);
+        assert_parses!(parse_keyword("as"), Keyword::As);
+        assert_parses!(parse_keyword("asr"), Keyword::Asr);
+    }
+
+    #[test]
+    fn test_integer_literal() {
         assert_parses!(parse_literal("012"), Literal::Int(12, IntType::Int));
         assert_parses!(parse_literal("-0b11"), Literal::Int(-3, IntType::Int));
         assert_parses!(
@@ -252,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_char_literal() {
+    fn test_char_literal() {
         assert_parses!(parse_literal("'x'"), Literal::Char(b'x'));
         assert_parses!(parse_literal(r#"'\n'"#), Literal::Char(b'\n'));
         assert_parses!(parse_literal(r#"'\\'"#), Literal::Char(b'\\'));
@@ -260,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_string_literal() {
+    fn test_string_literal() {
         assert_parses!(
             parse_literal(r#""AB\u{0043}\n""#),
             Literal::String("ABC\n".into()),

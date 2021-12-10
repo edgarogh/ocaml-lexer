@@ -1,7 +1,7 @@
 //! <https://ocaml.org/manual/lex.html#sss:keywords>
 
 use inflections::Inflect;
-use proc_macro2::{TokenStream, TokenTree};
+use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{format_ident, quote, quote_spanned};
 
 const KW_STRING: &str = r#"
@@ -58,7 +58,7 @@ fn name_symbols(symbols: &str) -> String {
         .collect::<String>()
 }
 
-fn get_keywords() -> Vec<(String, String, bool)> {
+fn get_keywords() -> Vec<(String, Ident, bool)> {
     let mut keywords = KW_STRING
         .split_ascii_whitespace()
         .zip(std::iter::repeat(true))
@@ -74,7 +74,7 @@ fn get_keywords() -> Vec<(String, String, bool)> {
                 name_symbols(kw)
             };
 
-            (kw.to_string(), variant_name, is_alpha)
+            (kw.to_string(), format_ident!("{}", variant_name), is_alpha)
         })
         .collect::<Vec<_>>();
 
@@ -83,14 +83,29 @@ fn get_keywords() -> Vec<(String, String, bool)> {
     keywords
 }
 
-#[proc_macro]
-pub fn generate_keywords(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = TokenStream::from(input);
+#[proc_macro_attribute]
+pub fn generate_keywords(
+    params: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    assert_eq!(params.into_iter().count(), 0, "no parameters expected");
 
-    let mut input = input.into_iter();
+    let input = TokenStream::from(input);
+    let mut input = input.into_iter().peekable();
+
+    if matches!(input.peek(), Some(&TokenTree::Ident(ref ident)) if ident.to_string() == "pub") {
+        input.next();
+    }
+
+    assert!(
+        matches!(input.next(), Some(TokenTree::Ident(ident)) if ident == format_ident!("enum")),
+        "expected enum",
+    );
+
     let name = input.next().expect("missing argument");
     let span = name.span();
-    assert!(input.next().is_none(), "too many argument");
+
+    assert_eq!(input.count(), 1, "too many arguments");
 
     match name {
         TokenTree::Ident(ident) => {
@@ -99,22 +114,44 @@ pub fn generate_keywords(input: proc_macro::TokenStream) -> proc_macro::TokenStr
                 let kw = if kw == "`" { "`\u{200b}`\u{200b}`" } else { kw };
 
                 let doc = format!("OCaml's `{}` keyword", kw);
-                let variant = format_ident!("{}", variant);
                 quote! {
                     #[doc=#doc]
                     #variant,
                 }
             });
 
-            let alphabetic =
-                kw.iter()
-                    .filter(|(_, _, is_alpha)| *is_alpha)
-                    .map(|(_, variant, _)| {
-                        let variant = format_ident!("{}", variant);
-                        quote!(| Self::#variant)
-                    });
+            let to_str = kw.iter().map(|(kw, variant, _)| {
+                quote! {
+                    Self::#variant => #kw,
+                }
+            });
 
-            quote_spanned! {span=>
+            let alts = kw
+                .iter()
+                .rev()
+                .map(|(_, variant, _)| {
+                    quote! {
+                        Self::#variant.parser(),
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            let alts = alts.chunks(21).map(|chunk| {
+                quote! {
+                    ::nom::branch::alt((
+                        #(#chunk)*
+                    )),
+                }
+            });
+
+            let alphabetic = kw
+                .iter()
+                .filter(|(_, _, is_alpha)| *is_alpha)
+                .map(|(_, variant, _)| quote!(| Self::#variant));
+
+            let ident = quote_spanned! {span=> #ident };
+
+            quote! {
                 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
                 pub enum #ident {
                     #(#keywords)*
@@ -126,6 +163,37 @@ pub fn generate_keywords(input: proc_macro::TokenStream) -> proc_macro::TokenStr
                             #(#alphabetic)* => true,
                             _ => false,
                         }
+                    }
+
+                    pub fn to_str(self) -> &'static str {
+                        match self {
+                            #(#to_str)*
+                        }
+                    }
+
+                    /// Creates a [nom][::nom] parser for a specific keyword
+                    pub fn parser<Input, Error: ::nom::error::ParseError<Input>>(
+                        self,
+                    ) -> impl Fn(Input) -> ::nom::IResult<Input, Self, Error>
+                        where Input: ::nom::InputTake + ::nom::Compare<&'static str> + Clone,
+                    {
+                        move |input: Input| {
+                            ::nom::combinator::value(
+                                self,
+                                ::nom::bytes::complete::tag(self.to_str()),
+                            )(input)
+                        }
+                    }
+
+                    /// Parses any keyword using [nom][::nom]
+                    pub fn parse<Input, Error: ::nom::error::ParseError<Input>>(
+                        input: Input,
+                    ) -> ::nom::IResult<Input, Self, Error>
+                        where Input: ::nom::InputTake + ::nom::Compare<&'static str> + Clone,
+                    {
+                        ::nom::branch::alt((
+                            #(#alts)*
+                        ))(input)
                     }
                 }
             }
