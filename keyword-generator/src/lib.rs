@@ -22,6 +22,7 @@ const KW_SYMBOLS: &str = r#"
     -.    ->    .     ..    .~    :     ::    :=    :>    ;     ;;
     <     <-    =     >     >]    >}    ?     [     [<    [>    [|
     ]     _     `     {     {<    |     |]    ||    }     ~
+    ! ^
 "#;
 
 fn name_symbols(symbols: &str) -> String {
@@ -53,6 +54,7 @@ fn name_symbols(symbols: &str) -> String {
             '_' => "Underscore",
             '`' => "Bt",
             '{' => "LCurly",
+            '^' => "Caret",
             _ => unimplemented!(),
         })
         .collect::<String>()

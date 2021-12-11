@@ -2,7 +2,7 @@ use crate::*;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_until};
 use nom::character::complete::{anychar, char, multispace0, none_of, one_of};
-use nom::combinator::{map, map_res, opt, recognize, value};
+use nom::combinator::{all_consuming, map, map_res, opt, recognize, value};
 use nom::multi::{count, fold_many0, many0, many1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{IResult, Offset, Slice};
@@ -273,10 +273,10 @@ pub fn parse_token_or_comment(input: &str) -> IResult<&str, TokenOrComment> {
 }
 
 pub fn parse_tokens_or_comments(input: &str) -> IResult<&str, Vec<TokenOrComment>> {
-    preceded(
+    all_consuming(preceded(
         multispace0,
         many0(terminated(parse_token_or_comment, multispace0)),
-    )(input)
+    ))(input)
 }
 
 pub fn parse_tokens(input: &str) -> IResult<&str, Vec<Token>> {
@@ -315,6 +315,7 @@ mod tests {
 
         assert_parses!(parse_keyword("fun"), Keyword::Fun);
         assert_parses!(parse_keyword("!="), Keyword::NotEq);
+        assert_parses!(parse_keyword("!"), Keyword::Not);
         assert_parses!(parse_keyword("."), Keyword::Dot);
         assert_parses!(parse_keyword(".."), Keyword::DotDot);
         assert_parses!(parse_keyword("as"), Keyword::As);
