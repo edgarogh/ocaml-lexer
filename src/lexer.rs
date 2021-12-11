@@ -293,11 +293,19 @@ mod tests {
     use super::*;
 
     macro_rules! assert_parses {
+        // Ok: parses
         ($parser:ident($input:expr), $expected:expr $(,)?) => {
             assert_eq!(
                 ::nom::combinator::all_consuming($parser)($input).unwrap().1,
                 $expected,
             );
+        };
+        // Err: doesn't parse
+        (! $parser:ident($input:expr), $expected:pat $(,)?) => {
+            assert!(matches!(
+                ::nom::combinator::all_consuming($parser)($input).unwrap_err(),
+                $expected,
+            ));
         };
     }
 
@@ -311,6 +319,7 @@ mod tests {
         assert_parses!(parse_keyword(".."), Keyword::DotDot);
         assert_parses!(parse_keyword("as"), Keyword::As);
         assert_parses!(parse_keyword("asr"), Keyword::Asr);
+        assert_parses!(!parse_keyword("void"), _);
     }
 
     #[test]
@@ -330,6 +339,7 @@ mod tests {
         assert_parses!(parse_literal(r#"'\\'"#), Literal::Char(b'\\'));
         assert_parses!(parse_literal(r#"'\000'"#), Literal::Char(b'\0'));
         assert_parses!(parse_literal("'\t'"), Literal::Char(b'\t'));
+        assert_parses!(!parse_literal("'\n'"), _);
     }
 
     #[test]
@@ -355,8 +365,10 @@ mod tests {
     #[test]
     fn test_parse_comment() {
         const INPUT: &str = "(* This code was commented (* but there's a sub-comment *) *)";
-
         assert_parses!(parse_comment(INPUT), String::from(INPUT));
+
+        const INPUT_ERR: &str = "(* This code was commented (* but there's a sub-comment *)";
+        assert_parses!(!parse_comment(INPUT_ERR), _);
     }
 
     #[test]
