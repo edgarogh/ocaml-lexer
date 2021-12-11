@@ -2,7 +2,7 @@ use crate::*;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_until};
 use nom::character::complete::{anychar, char, multispace0, none_of, one_of};
-use nom::combinator::{all_consuming, map, map_res, opt, recognize, value};
+use nom::combinator::{all_consuming, map, map_res, not, opt, peek, recognize, value};
 use nom::multi::{count, fold_many0, many0, many1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{IResult, Offset, Slice};
@@ -117,13 +117,22 @@ pub fn parse_integer_literal(input: &str) -> IResult<&str, Literal> {
                 parse_integer_literal_radix(take(0usize), 10, DIGITS_DECIMAL),
             )),
             parse_integer_literal_suffix,
+            // Prevent float numbers from being accepted
+            peek(not(char('.'))),
         )),
-        |(negative, num, int_type)| {
+        |(negative, num, int_type, _)| {
             let sign = if negative.is_none() { 1 } else { -1 };
 
             Literal::Int(num * sign, int_type)
         },
     )(input)
+}
+
+/// <https://ocaml.org/manual/lex.html#float-literal>
+pub fn parse_float_literal(input: &str) -> IResult<&str, Literal> {
+    // FIXME: THIS ISN'T OCAML-COMPLIANT AT ALL
+
+    map(nom::number::complete::double, Literal::Float)(input)
 }
 
 /// <https://ocaml.org/manual/lex.html#char-literal>
@@ -211,7 +220,7 @@ pub fn parse_string_literal(input: &str) -> IResult<&str, Literal> {
 pub fn parse_literal(input: &str) -> IResult<&str, Literal> {
     alt((
         parse_integer_literal,
-        // TODO float
+        parse_float_literal,
         parse_char_literal,
         parse_string_literal,
     ))(input)
@@ -331,6 +340,11 @@ mod tests {
             parse_literal("0x12_34L"),
             Literal::Int(0x1234, IntType::Int64),
         );
+    }
+
+    #[test]
+    fn test_float_literal() {
+        assert_parses!(parse_literal("1.2"), Literal::Float(1.2));
     }
 
     #[test]
