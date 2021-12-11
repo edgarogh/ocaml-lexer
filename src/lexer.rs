@@ -2,7 +2,7 @@ use crate::*;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_until};
 use nom::character::complete::{anychar, char, multispace0, none_of, one_of};
-use nom::combinator::{consumed, map, opt, value};
+use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::multi::{count, fold_many0, many0, many1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{IResult, Offset, Slice};
@@ -12,7 +12,8 @@ const DIGITS_OCTAL: &str = "01234567";
 const DIGITS_BINARY: &str = "01";
 const DIGITS_DECIMAL: &str = "0123456789";
 
-const ILLEGAL_STRING_CHARS: &str = "\t\n\r\"\'\x0C";
+const ILLEGAL_CHAR_CHARS: &str = "\n\r\'\x0C";
+const ILLEGAL_STRING_CHARS: &str = "\n\r\"\x0C";
 
 /// <https://ocaml.org/manual/lex.html#letter>
 pub fn parse_letter(input: &str) -> IResult<&str, char> {
@@ -26,11 +27,11 @@ pub fn parse_digit(input: &str) -> IResult<&str, char> {
 /// <https://ocaml.org/manual/lex.html#ident>
 pub fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
     map(
-        consumed(tuple((
+        recognize(tuple((
             alt((parse_letter, char('_'))),
             many0(alt((parse_letter, parse_digit, char('_'), char('\'')))),
         ))),
-        |(consumed, _)| Identifier {
+        |consumed| Identifier {
             inner: consumed.to_string(),
         },
     )(input)
@@ -38,24 +39,22 @@ pub fn parse_identifier(input: &str) -> IResult<&str, Identifier> {
 
 pub fn parse_escape_sequence_number(input: &str) -> IResult<&str, u8> {
     alt((
-        map(consumed(count(parse_digit, 3)), |(n, _)| {
-            u8::from_str_radix(n, 10).unwrap()
+        map_res(recognize(count(parse_digit, 3)), |n| {
+            u8::from_str_radix(n, 10)
         }),
-        map(
-            consumed(preceded(tag("x"), count(one_of(DIGITS_HEX), 2))),
-            |(n, _)| u8::from_str_radix(n, 16).unwrap(),
+        map_res(
+            recognize(preceded(tag("x"), count(one_of(DIGITS_HEX), 2))),
+            |n| u8::from_str_radix(n, 16),
         ),
-        map(
-            consumed(preceded(
+        map_res(
+            recognize(preceded(
                 tag("o"),
                 tuple((one_of("0123"), one_of(DIGITS_HEX), one_of(DIGITS_HEX))),
             )),
-            |(n, _)| u8::from_str_radix(n, 8).unwrap(),
+            |n| u8::from_str_radix(n, 8),
         ),
     ))(input)
 }
-
-// TODO remove unwraps
 
 pub fn parse_escape_sequence(input: &str) -> IResult<&str, u8> {
     preceded(
@@ -65,6 +64,7 @@ pub fn parse_escape_sequence(input: &str) -> IResult<&str, u8> {
             value(b'"', char('"')),
             value(b'\'', char('\'')),
             value(b'\n', char('n')),
+            value(b'\n', char('\n')),
             value(b'\r', char('r')),
             value(b'\t', char('t')),
             value(b'\x08', char('b')),
@@ -80,17 +80,17 @@ fn parse_integer_literal_radix<'a, R, P: FnMut(&'a str) -> IResult<&'a str, R>>(
     digits: &'static str,
 ) -> impl FnMut(&'a str) -> IResult<&'a str, i64> {
     move |input| {
-        map(
+        map_res(
             tuple((
                 |i| prefix(i),
-                consumed(tuple((
+                recognize(tuple((
                     one_of(digits),
                     many0(alt((one_of(digits), char('_')))),
                 ))),
             )),
-            |(_, (consumed, _))| {
+            |(_, consumed)| {
                 let num_without_underscores = consumed.replace("_", "");
-                i64::from_str_radix(&num_without_underscores, radix).unwrap() // TODO unwrap
+                i64::from_str_radix(&num_without_underscores, radix)
             },
         )(input)
     }
@@ -133,11 +133,11 @@ pub fn parse_char_literal(input: &str) -> IResult<&str, Literal> {
             char('\''),
             alt((
                 parse_escape_sequence,
-                map(none_of(ILLEGAL_STRING_CHARS), |char: char| {
+                map_res(none_of(ILLEGAL_CHAR_CHARS), |char: char| {
                     if !char.is_ascii() {
-                        todo!("char not ascii")
+                        Err("char is not valid ascii")
                     } else {
-                        char as u8
+                        Ok(char as u8)
                     }
                 }),
             )),
@@ -148,14 +148,18 @@ pub fn parse_char_literal(input: &str) -> IResult<&str, Literal> {
 }
 
 pub fn parse_string_literal_quotes(input: &str) -> IResult<&str, String> {
-    fn parse_unicode_sequence(input: &str) -> IResult<&str, char> {
-        map(
-            delimited(tag("\\u{"), consumed(many1(one_of(DIGITS_HEX))), char('}')),
-            |(hex, _)| char::from_u32(u32::from_str_radix(hex, 16).unwrap()).unwrap(),
-        )(input)
+    fn parse_unicode_sequence_code(input: &str) -> IResult<&str, u32> {
+        map_res(recognize(many1(one_of(DIGITS_HEX))), |hex| {
+            u32::from_str_radix(hex, 16)
+        })(input)
     }
 
-    // TODO newline
+    fn parse_unicode_sequence(input: &str) -> IResult<&str, char> {
+        map_res(
+            delimited(tag("\\u{"), parse_unicode_sequence_code, char('}')),
+            |code| char::from_u32(code).ok_or("cannot convert code to char"),
+        )(input)
+    }
 
     delimited(
         char('"'),
@@ -177,7 +181,7 @@ pub fn parse_string_literal_quotes(input: &str) -> IResult<&str, String> {
 
 pub fn parse_string_literal_curly_braces(input: &str) -> IResult<&str, String> {
     fn parse_inner(input: &str) -> IResult<&str, String> {
-        let (rest, (id, _)) = consumed(many0(one_of("abcdefghijklmnopqrstuvwxyz_")))(input)?;
+        let (rest, id) = recognize(many0(one_of("abcdefghijklmnopqrstuvwxyz_")))(input)?;
         let id = String::with_capacity(id.len() + 1) + "|" + id;
 
         let r = map(
@@ -324,6 +328,7 @@ mod tests {
         assert_parses!(parse_literal(r#"'\n'"#), Literal::Char(b'\n'));
         assert_parses!(parse_literal(r#"'\\'"#), Literal::Char(b'\\'));
         assert_parses!(parse_literal(r#"'\000'"#), Literal::Char(b'\0'));
+        assert_parses!(parse_literal("'\t'"), Literal::Char(b'\t'));
     }
 
     #[test]
@@ -331,6 +336,10 @@ mod tests {
         assert_parses!(
             parse_literal("\"Hello world\""),
             Literal::String("Hello world".into()),
+        );
+        assert_parses!(
+            parse_literal("\"Hello\\\nworld\""),
+            Literal::String("Hello\nworld".into()),
         );
         assert_parses!(
             parse_literal(r#""AB\u{0043}\n""#),
