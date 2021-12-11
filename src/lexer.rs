@@ -272,19 +272,20 @@ pub fn parse_token_or_comment(input: &str) -> IResult<&str, TokenOrComment> {
     ))(input)
 }
 
-pub fn parse_tokens(input: &str) -> IResult<&str, Vec<Token>> {
-    map(
-        preceded(
-            multispace0,
-            many0(terminated(parse_token_or_comment, multispace0)),
-        ),
-        |token_or_comments| {
-            token_or_comments
-                .into_iter()
-                .filter_map(TokenOrComment::token)
-                .collect()
-        },
+pub fn parse_tokens_or_comments(input: &str) -> IResult<&str, Vec<TokenOrComment>> {
+    preceded(
+        multispace0,
+        many0(terminated(parse_token_or_comment, multispace0)),
     )(input)
+}
+
+pub fn parse_tokens(input: &str) -> IResult<&str, Vec<Token>> {
+    map(parse_tokens_or_comments, |tokens_or_comments| {
+        tokens_or_comments
+            .into_iter()
+            .filter_map(TokenOrComment::token)
+            .collect()
+    })(input)
 }
 
 #[cfg(test)]

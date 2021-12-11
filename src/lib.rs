@@ -3,6 +3,7 @@
 use keyword_generator::generate_keywords;
 
 pub mod lexer;
+pub use lexer::{parse_tokens, parse_tokens_or_comments};
 
 /// <https://ocaml.org/manual/lex.html#sss:lex:identifiers>
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
