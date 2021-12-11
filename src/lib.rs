@@ -5,12 +5,16 @@ use keyword_generator::generate_keywords;
 pub mod lexer;
 
 /// <https://ocaml.org/manual/lex.html#sss:lex:identifiers>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Identifier {
     inner: String,
 }
 
 impl Identifier {
+    pub fn new(inner: String) -> Self {
+        Self { inner }
+    }
+
     /// <https://ocaml.org/manual/lex.html#capitalized-ident>
     pub fn is_capitalized(&self) -> bool {
         self.inner.starts_with(|c: char| c.is_ascii_uppercase())
@@ -51,7 +55,7 @@ pub enum Literal {
     String(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Label {
     /// Must be lowercase
     name: Identifier,
@@ -62,7 +66,7 @@ pub struct Label {
 #[generate_keywords]
 pub enum Keyword {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     Identifier(Identifier),
     Literal(Literal),

@@ -1,18 +1,18 @@
 use crate::*;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_until};
-use nom::character::complete::{char, multispace0, none_of, one_of};
+use nom::character::complete::{anychar, char, multispace0, none_of, one_of};
 use nom::combinator::{consumed, map, opt, value};
 use nom::multi::{count, fold_many0, many0, many1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
-use nom::IResult;
+use nom::{IResult, Offset, Slice};
 
 const DIGITS_HEX: &str = "0123456789abcdefABCDEF";
 const DIGITS_OCTAL: &str = "01234567";
 const DIGITS_BINARY: &str = "01";
 const DIGITS_DECIMAL: &str = "0123456789";
 
-const ILLEGAL_STRING_CHARS: &str = " \t\n\r\"\'\x0C";
+const ILLEGAL_STRING_CHARS: &str = "\t\n\r\"\'\x0C";
 
 /// <https://ocaml.org/manual/lex.html#letter>
 pub fn parse_letter(input: &str) -> IResult<&str, char> {
@@ -185,7 +185,7 @@ pub fn parse_string_literal_curly_braces(input: &str) -> IResult<&str, String> {
             |s: &str| s.to_string(),
         )(rest);
 
-        id;
+        std::mem::drop(id);
 
         r
     }
@@ -222,10 +222,65 @@ pub fn parse_token(input: &str) -> IResult<&str, Token> {
     ))(input)
 }
 
-pub fn parse_tokens(input: &str) -> IResult<&str, Vec<Token>> {
-    // TODO handle comments and test
+pub fn parse_comment(base_input: &str) -> IResult<&str, String> {
+    let (mut input, _) = tag("(*")(base_input)?;
 
-    preceded(multispace0, many0(terminated(parse_token, multispace0)))(input)
+    let mut depth = 1isize;
+
+    loop {
+        #[rustfmt::skip]
+        let (rest, depth_offset) = alt((
+            value(1, tag("(*")),
+            value(-1, tag("*)")),
+            value(0, anychar),
+        ))(input)?;
+
+        depth += depth_offset;
+
+        if depth == 0 {
+            let index = base_input.offset(&rest);
+            let consumed = base_input.slice(..index);
+            break Ok((rest, consumed.to_string()));
+        } else {
+            input = rest;
+        }
+    }
+}
+
+pub enum TokenOrComment {
+    Token(Token),
+    Comment(String),
+}
+
+impl TokenOrComment {
+    pub fn token(self) -> Option<Token> {
+        match self {
+            Self::Token(token) => Some(token),
+            Self::Comment(_) => None,
+        }
+    }
+}
+
+pub fn parse_token_or_comment(input: &str) -> IResult<&str, TokenOrComment> {
+    alt((
+        map(parse_comment, TokenOrComment::Comment),
+        map(parse_token, TokenOrComment::Token),
+    ))(input)
+}
+
+pub fn parse_tokens(input: &str) -> IResult<&str, Vec<Token>> {
+    map(
+        preceded(
+            multispace0,
+            many0(terminated(parse_token_or_comment, multispace0)),
+        ),
+        |token_or_comments| {
+            token_or_comments
+                .into_iter()
+                .filter_map(TokenOrComment::token)
+                .collect()
+        },
+    )(input)
 }
 
 #[cfg(test)]
@@ -274,12 +329,42 @@ mod tests {
     #[test]
     fn test_string_literal() {
         assert_parses!(
+            parse_literal("\"Hello world\""),
+            Literal::String("Hello world".into()),
+        );
+        assert_parses!(
             parse_literal(r#""AB\u{0043}\n""#),
             Literal::String("ABC\n".into()),
         );
         assert_parses!(
             parse_literal(r#"{hello|Hello{{|World|}}\n|hello}"#),
             Literal::String(r#"Hello{{|World|}}\n"#.into()),
+        );
+    }
+
+    #[test]
+    fn test_parse_comment() {
+        const INPUT: &str = "(* This code was commented (* but there's a sub-comment *) *)";
+
+        assert_parses!(parse_comment(INPUT), String::from(INPUT));
+    }
+
+    #[test]
+    fn test_parse_tokens() {
+        const INPUT: &str = r#"
+(* Prints "Hello world" *)
+let _ = print_endline "Hello world"
+"#;
+
+        assert_parses!(
+            parse_tokens(INPUT),
+            vec![
+                Token::Keyword(Keyword::Let),
+                Token::Keyword(Keyword::Underscore),
+                Token::Keyword(Keyword::Eq),
+                Token::Identifier(Identifier::new(String::from("print_endline"))),
+                Token::Literal(Literal::String(String::from("Hello world")))
+            ],
         );
     }
 }
