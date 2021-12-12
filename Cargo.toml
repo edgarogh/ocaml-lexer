@@ -3,10 +3,19 @@ name = "ocaml-lexer"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "ocaml-lexer-check-all"
+path = "src/bin/check_all.rs"
+required-features = ["walkdir", "rayon"]
+
 [dependencies]
 keyword-generator = { path = "./keyword-generator" }
-
 nom = "7.1.0"
+rayon = { version = "1.5.1", optional = true }
+walkdir = { version = "2.3.2", optional = true }
 
 [workspace]
 members = ["keyword-generator"]
