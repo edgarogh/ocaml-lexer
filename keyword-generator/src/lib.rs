@@ -22,7 +22,8 @@ const KW_SYMBOLS: &str = r#"
     -.    ->    .     ..    .~    :     ::    :=    :>    ;     ;;
     <     <-    =     >     >]    >}    ?     [     [<    [>    [|
     ]     _     `     {     {<    |     |]    ||    }     ~
-    ! ^
+
+    ! $ % / @ ^
 "#;
 
 fn name_symbols(symbols: &str) -> String {
@@ -48,12 +49,16 @@ fn name_symbols(symbols: &str) -> String {
             '<' => "Lt",
             ']' => "RSquare",
             '}' => "RCurly",
-            '?' => "Int",
+            '?' => "Question",
             '[' => "LSquare",
             '|' => "Pipe",
             '_' => "Underscore",
             '`' => "Bt",
             '{' => "LCurly",
+            '$' => "Dollar",
+            '%' => "Percent",
+            '/' => "Slash",
+            '@' => "At",
             '^' => "Caret",
             _ => unimplemented!(),
         })

@@ -43,14 +43,18 @@ pub fn parse_escape_sequence_number(input: &str) -> IResult<&str, u8> {
             u8::from_str_radix(n, 10)
         }),
         map_res(
-            recognize(preceded(tag("x"), count(one_of(DIGITS_HEX), 2))),
+            preceded(char('x'), recognize(count(one_of(DIGITS_HEX), 2))),
             |n| u8::from_str_radix(n, 16),
         ),
         map_res(
-            recognize(preceded(
-                tag("o"),
-                tuple((one_of("0123"), one_of(DIGITS_HEX), one_of(DIGITS_HEX))),
-            )),
+            preceded(
+                char('o'),
+                recognize(tuple((
+                    one_of("0123"),
+                    one_of(DIGITS_HEX),
+                    one_of(DIGITS_HEX),
+                ))),
+            ),
             |n| u8::from_str_radix(n, 8),
         ),
     ))(input)
@@ -228,10 +232,10 @@ pub fn parse_literal(input: &str) -> IResult<&str, Literal> {
 
 pub fn parse_token(input: &str) -> IResult<&str, Token> {
     alt((
+        map(parse_literal, Token::Literal),
         map(Keyword::parse, Token::Keyword),
         map(parse_identifier, Token::Identifier),
         // TODO label
-        map(parse_literal, Token::Literal),
     ))(input)
 }
 
@@ -354,6 +358,9 @@ mod tests {
         assert_parses!(parse_literal(r#"'\\'"#), Literal::Char(b'\\'));
         assert_parses!(parse_literal(r#"'\000'"#), Literal::Char(b'\0'));
         assert_parses!(parse_literal("'\t'"), Literal::Char(b'\t'));
+        assert_parses!(parse_literal("'\\x01'"), Literal::Char(1));
+        assert_parses!(parse_literal("'\\o010'"), Literal::Char(8));
+
         assert_parses!(!parse_literal("'\n'"), _);
     }
 
@@ -388,6 +395,14 @@ mod tests {
 
     #[test]
     fn test_parse_tokens() {
+        assert_parses!(
+            parse_tokens("'\\n';"),
+            vec![
+                Token::Literal(Literal::Char(b'\n')),
+                Token::Keyword(Keyword::SColon),
+            ],
+        );
+
         const INPUT: &str = r#"
 (* Prints "Hello world" *)
 let _ = print_endline "Hello world"
