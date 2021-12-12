@@ -7,17 +7,18 @@ use nom::multi::{count, fold_many0, many0, many1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{IResult, Offset, Slice};
 
+const LETTERS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const DIGITS_HEX: &str = "0123456789abcdefABCDEF";
 const DIGITS_OCTAL: &str = "01234567";
 const DIGITS_BINARY: &str = "01";
 const DIGITS_DECIMAL: &str = "0123456789";
 
 const ILLEGAL_CHAR_CHARS: &str = "\n\r\'\x0C";
-const ILLEGAL_STRING_CHARS: &str = "\n\r\"\x0C";
+const ILLEGAL_STRING_CHARS: &str = "\r\"\x0C";
 
 /// <https://ocaml.org/manual/lex.html#letter>
 pub fn parse_letter(input: &str) -> IResult<&str, char> {
-    one_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")(input)
+    one_of(LETTERS)(input)
 }
 
 pub fn parse_digit(input: &str) -> IResult<&str, char> {
@@ -366,6 +367,7 @@ mod tests {
 
     #[test]
     fn test_string_literal() {
+        assert_parses!(parse_literal("\"\n\""), Literal::String("\n".into()));
         assert_parses!(
             parse_literal("\"Hello world\""),
             Literal::String("Hello world".into()),
